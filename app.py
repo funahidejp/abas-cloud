@@ -10,9 +10,9 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from xml.sax.saxutils import escape
 
-st.set_page_config(page_title='ABAS | 経営分析 Ver.2', page_icon='📊', layout='wide')
-st.title('ABAS | 経営分析 Ver.2')
-st.caption('CSVを集計し、利益・経費率・売上推移を分析してPDFレポートを作成します。生成AI・顧客認証・決済は未接続です。')
+st.set_page_config(page_title='ABAS | 経営分析 Ver.3', page_icon='📊', layout='wide')
+st.title('ABAS | 経営分析 Ver.3')
+st.caption('CSVの期間比較、利益分析、改善アクションとPDFレポートを作成します。任意で生成AI分析を利用できます（管理者設定が必要）。')
 st.warning('公開デモです。個人情報・顧客情報・機密情報はアップロードしないでください。')
 
 @st.cache_data(show_spinner=False)
@@ -44,6 +44,7 @@ def build_pdf(lines, rows):
     doc.build(story)
     return buf.getvalue()
 
+st.download_button('サンプルCSVをダウンロード', data='月,売上,経費,受注件数\n1月,120000,45000,12\n2月,160000,53000,15\n3月,190000,61000,19\n4月,175000,57000,17\n'.encode('utf-8-sig'), file_name='sample_sales.csv', mime='text/csv')
 uploaded = st.file_uploader('CSVファイルを選択（最大5MB）', type=['csv'])
 if uploaded is None:
     st.info('最初は sample_sales.csv をアップロードしてください。列名「売上」「経費」を自動認識します。')
@@ -114,6 +115,16 @@ if '売上' in num_cols and '経費' in num_cols:
     z.metric('差引利益（参考）',money(profit))
     if margin is not None:
         st.metric('差引利益率（参考）',f'{margin:.1f}%')
+    if len(revenue)>=2:
+        st.subheader('前期間との比較（CSVの行順）')
+        last_rev, prev_rev = float(revenue.iloc[-1]), float(revenue.iloc[-2])
+        last_profit = float(revenue.iloc[-1]-cost.iloc[-1])
+        prev_profit = float(revenue.iloc[-2]-cost.iloc[-2])
+        ca,cb=st.columns(2)
+        ca.metric('最終行の売上',money(last_rev),delta=money(last_rev-prev_rev))
+        cb.metric('最終行の差引利益',money(last_profit),delta=money(last_profit-prev_profit))
+        st.caption('最終行とその直前の行を比較しています。時系列順に並んでいることを確認してください。')
+        lines.extend([f'最終行の売上：{money(last_rev)}（前行差 {money(last_rev-prev_rev)}）',f'最終行の差引利益：{money(last_profit)}（前行差 {money(last_profit-prev_profit)}）'])
     advice=[]
     if total_sales<=0:
         advice.append('売上合計が0以下のため、利益率の評価を省略しました。入力値を確認してください。')
@@ -135,13 +146,48 @@ if '売上' in num_cols and '経費' in num_cols:
     lines.extend([f'売上合計：{money(total_sales)}',f'経費合計：{money(total_cost)}',f'差引利益（参考）：{money(profit)}'])
     if margin is not None: lines.append(f'差引利益率（参考）：{margin:.1f}%')
     lines.extend(['改善提案：'+item for item in advice])
+    st.subheader('次のアクション（担当者が検証）')
+    action_items=['売上が減った期間の顧客数・単価・受注数を確認する','経費を主要費目に分け、前期間との差を確認する','改善施策の担当者・期限・評価指標を決める']
+    for i, action in enumerate(action_items,1):
+        st.write(f'{i}. {action}')
+    lines.extend(['次のアクション：'+item for item in action_items])
     rows=[['指標','集計値','備考'],['売上合計',money(total_sales),'入力行の合計'],['経費合計',money(total_cost),'入力行の合計'],['差引利益',money(profit),'売上－経費']]
 else:
     st.info('経営指標の計算には「売上」「経費」の列が必要です。一般統計レポートは作成できます。')
     lines.append('売上・経費の列がないため経営指標の計算は省略しました。')
 
+# 生成AIは管理者がStreamlit SecretsにAPIキーを設定した場合のみ使用可能。
+# 利用者のCSV全文は送らず、集計済みの指標・ルールベース提案のみ送信。
+st.subheader('生成AIによる追加コメント（任意）')
+try:
+    api_key = st.secrets.get('OPENAI_API_KEY', '')
+except Exception:
+    api_key = ''
+if not api_key:
+    st.info('生成AIは未接続です。ルールベース分析とPDF出力は無料で利用できます。')
+elif not rows:
+    st.info('生成AIコメントには「売上」「経費」列が必要です。')
+else:
+    st.caption('「AI分析を実行」を押したときだけ、集計値と改善提案を外部AIサービスに送信します。入力CSVそのものは送信しません。')
+    consent = st.checkbox('集計値を外部AIサービスへ送信することに同意します')
+    if st.button('AI分析を実行', disabled=not consent):
+        try:
+            from openai import OpenAI
+            client=OpenAI(api_key=api_key, timeout=20.0)
+            summary='\n'.join(lines)[:4500]
+            response=client.responses.create(model='gpt-4.1-mini', max_output_tokens=650,
+                instructions='あなたは中小企業の経営分析補助者です。与えられた集計値だけを使い、事実と仮説を分けて日本語で300字以内の改善提案を述べてください。数値のない原因を断定しないでください。',
+                input=summary)
+            st.markdown(response.output_text)
+            st.session_state['ai_comment']=response.output_text
+        except Exception:
+            st.error('AIサービスへの接続に失敗しました。管理者に設定・利用枠を確認してください。')
+    if st.session_state.get('ai_comment'):
+        st.caption('AIコメントは参考情報です。事実関係を確認してから使用してください。')
+        lines.append('生成AIによる参考コメント：'+st.session_state['ai_comment'])
+
 pdf=build_pdf(lines,rows)
 md='# ABAS 経営分析レポート\n\n'+'\n\n'.join(lines)+'\n'
 st.download_button('📄 PDFレポートをダウンロード',pdf,file_name='ABAS_report.pdf',mime='application/pdf')
 st.download_button('Markdownレポートをダウンロード',md.encode('utf-8'),file_name='ABAS_report.md',mime='text/markdown')
-st.caption('本アプリは公開デモです。認証・契約・課金・データ分離・生成AI連携は実装されていません。')
+st.caption('本アプリは公開デモです。認証・契約・課金・データ分離・生成AIは管理者設定時のみ利用可能です。')
