@@ -10,10 +10,30 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from xml.sax.saxutils import escape
 
-st.set_page_config(page_title='ABAS | 経営分析 Ver.3', page_icon='📊', layout='wide')
-st.title('ABAS | 経営分析 Ver.3')
+st.set_page_config(page_title='ABAS | 経営分析 Ver.4', page_icon='📊', layout='wide')
+st.title('ABAS | 経営分析 Ver.4')
 st.caption('CSVの期間比較、利益分析、改善アクションとPDFレポートを作成します。任意で生成AI分析を利用できます（管理者設定が必要）。')
-st.warning('公開デモです。個人情報・顧客情報・機密情報はアップロードしないでください。')
+st.warning('公開デモです。個人情報・顧客情報・機密情報はアップロードしないでください。契約・課金・顧客認証は未稼働です。')
+
+st.subheader('ABAS 月額プラン（提供準備中）')
+st.caption('価格は検証用の仮設定です。以下はプラン案内であり、決済・契約を成立させるものではありません。')
+plan_a, plan_b = st.columns(2)
+with plan_a:
+    st.markdown('### スタンダード')
+    st.metric('想定月額', '30,000円')
+    st.write('CSV分析・期間比較・PDFレポート（予定）')
+with plan_b:
+    st.markdown('### プロ')
+    st.metric('想定月額', '50,000円')
+    st.write('スタンダード機能＋個別テンプレート・導入支援（予定）')
+st.info('現在は無料の公開デモです。有料プランの申込・支払・利用権限の付与はできません。')
+with st.expander('月商シミュレーション（契約数は仮定）'):
+    count_std = st.number_input('スタンダード契約数', min_value=0, max_value=10000, value=0, step=1)
+    count_pro = st.number_input('プロ契約数', min_value=0, max_value=10000, value=10, step=1)
+    st.metric('想定月商（売上総額・税等未調整）', f'{count_std*30000 + count_pro*50000:,}円')
+    st.caption('売上予測ではありません。手数料、経費、税金、解約率を考慮していません。')
+st.divider()
+
 
 @st.cache_data(show_spinner=False)
 def load_csv(raw):
@@ -190,4 +210,4 @@ pdf=build_pdf(lines,rows)
 md='# ABAS 経営分析レポート\n\n'+'\n\n'.join(lines)+'\n'
 st.download_button('📄 PDFレポートをダウンロード',pdf,file_name='ABAS_report.pdf',mime='application/pdf')
 st.download_button('Markdownレポートをダウンロード',md.encode('utf-8'),file_name='ABAS_report.md',mime='text/markdown')
-st.caption('本アプリは公開デモです。認証・契約・課金・データ分離・生成AIは管理者設定時のみ利用可能です。')
+st.caption('公開デモです。顧客認証・契約・課金・データ分離は未実装です。生成AIは管理者がAPIを設定した場合のみ使用可能です。')
