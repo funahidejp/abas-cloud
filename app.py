@@ -32,6 +32,47 @@ with st.expander('月商シミュレーション（契約数は仮定）'):
     count_pro = st.number_input('プロ契約数', min_value=0, max_value=10000, value=10, step=1)
     st.metric('想定月商（売上総額・税等未調整）', f'{count_std*30000 + count_pro*50000:,}円')
     st.caption('売上予測ではありません。手数料、経費、税金、解約率を考慮していません。')
+
+
+# ABAS Ver.5 - Stripe Sandbox Checkout
+st.subheader("Stripe Sandbox テスト決済")
+st.caption("テスト専用です。実際の請求は発生しません。")
+
+try:
+    import stripe
+    secret_key = st.secrets.get("STRIPE_SECRET_KEY", "")
+    prices = {
+        "スタンダード": st.secrets.get("STRIPE_PRICE_STANDARD", ""),
+        "プロ": st.secrets.get("STRIPE_PRICE_PRO", ""),
+    }
+except Exception:
+    secret_key = ""
+    prices = {}
+
+if not secret_key or not all(prices.values()):
+    st.warning("StripeのSecrets設定を確認してください。")
+elif not secret_key.startswith("sk_test_"):
+    st.error("本番APIキーは使用できません。")
+else:
+    stripe.api_key = secret_key
+    app_url = "https://abas-cloud-eakr8jc4vqz979h9nctc5b.streamlit.app/"
+
+    for plan_name, price_id in prices.items():
+        if st.button(f"{plan_name}のテスト決済", key=f"pay_{plan_name}"):
+            try:
+                session = stripe.checkout.Session.create(
+                    mode="subscription",
+                    line_items=[{"price": price_id, "quantity": 1}],
+                    payment_method_types=["card"],
+                    success_url=app_url + "?checkout=returned",
+                    cancel_url=app_url + "?checkout=canceled",
+                )
+                st.link_button("Stripeの決済画面を開く", session.url)
+            except stripe.error.StripeError:
+                st.error("決済画面を作成できません。Sandboxの設定を確認してください。")
+
+st.info("決済画面から戻っても利用権限は付与されません。")
+
 st.divider()
 
 
